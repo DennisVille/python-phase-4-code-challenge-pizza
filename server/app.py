@@ -24,6 +24,19 @@ api = Api(app)
 def index():
     return "<h1>Code challenge</h1>"
 
+@app.route('/restaurants')
+def get_all_restaurants():
+    restaurants = []
+    for res in Restaurant.query.all():
+        res_dict = res.to_dict(only = ('address', 'id', 'name',))
+        restaurants.append(res_dict)
+    
+    return make_response(
+        restaurants,
+        200,
+        {"Content-Type": "application/json"}
+    )
+
 
 if __name__ == "__main__":
     app.run(port=5555, debug=True)
