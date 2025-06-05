@@ -25,104 +25,82 @@ api = Api(app)
 def index():
     return "<h1>Code challenge</h1>"
 
-@app.route('/restaurants')
-def get_all_restaurants():
-    restaurants = []
-    for res in Restaurant.query.all():
-        res_dict = res.to_dict(only = ('address', 'id', 'name',))
-        restaurants.append(res_dict)
-    
-    return make_response(
-        restaurants,
-        200,
-        {"Content-Type": "application/json"}
-    )
 
-@app.route('/restaurants/<int:id>', methods = ['GET', 'DELETE'])
-def get_reataurant_by_id(id):
-    restaurant = Restaurant.query.filter_by(id = id).first()
-    if request.method == "GET":
-        if restaurant:
-            res_dict = restaurant.to_dict()
-            return make_response(res_dict, 200, {'Content-Type': 'application/json'})
-        else:
-            res_body = {'error': 'Restaurant not found'}
-            return make_response(res_body, 404)
+
+class Restaurants(Resource):
+    #get all restaurants or one restaurant
+    def get(self, id= None):
+        if id == None:
+            restuarants = [res.to_dict(rules = ('-restaurant_pizzas',)) for res in Restaurant.query.all()]
+            return make_response(restuarants, 200)
         
-    elif request.method == "DELETE":
+        else:
+            restaurant = Restaurant.query.filter_by(id = id).first()
+            if restaurant:
+                return make_response(restaurant.to_dict(), 200) 
+
+            else:
+                body = {'error': 'Restaurant not found'}
+                return make_response(body, 404)
+        
+    #delete a restaurant
+    def delete(self, id):
+        restaurant = Restaurant.query.filter_by(id = id).first()
+
         if restaurant:
-            db.session.delete(restaurant)
+           db.session.delete(restaurant)
+           db.session.commit()
+
+           return make_response({}, 204) 
+
+        else:
+            body = {'error': 'Restaurant not found'}
+            return make_response(body, 404)
+        
+api.add_resource(Restaurants, '/restaurants', '/restaurants/<int:id>')
+
+class Pizzas(Resource):
+    #get all pizzas
+    def get(self):
+        pizzas = [pizza.to_dict(rules = ('-restaurant_pizzas',)) for pizza in Pizza.query.all()]
+        return make_response(pizzas, 200)
+    
+api.add_resource(Pizzas, '/pizzas')
+
+class Restaurant_Pizzas(Resource):
+    def post(self):
+        data = request.get_json()
+
+        #check if rastaurant and pizza exist
+        res = Restaurant.query.filter_by(id = data['restaurant_id']).first()
+        pizz = Pizza.query.filter_by(id = data['pizza_id']).first()
+
+        if not res or not pizz or data['price'] is None :
+            body = {'errors': ['valization errors']}
+            return make_response(body, 404)
+        
+        #if 0 >= data['price'] > 30:
+         #   body = {'errors': ['valization errors']}
+          #  return make_response(body, 404)
+        
+        #create res_pizza
+        try:
+            new_obj = RestaurantPizza(price = data['price'], pizza_id = data['pizza_id'], restaurant_id = data['restaurant_id'])
+            db.session.add(new_obj)
             db.session.commit()
 
-            res_body = {}
-            return make_response(res_body, 204)
-        else:
-            res_body = {'error': 'Restaurant not found'}
-            return make_response(res_body, 404)
+            return_dict = new_obj.to_dict(rules=('-pizza.restaurant_pizzas', '-restaurant.restaurant_pizzas',))
+            return make_response(return_dict, 201)
         
-@app.route('/pizzas', methods = ['GET'])
-def get_pizzas():
-    pizzas = Pizza.query.all()
-    pizzas_dict = [pizza.to_dict(only = ('id', 'ingredients', 'name')) for pizza in pizzas]
-    return make_response(pizzas_dict, 200)
-
-@app.route('/restaurant_pizzas', methods=['POST'])
-def create_restaurant_pizza():
-    data = request.get_json()
-
-    price = data.get('price')
-    pizza_id = data.get('pizza_id')
-    restaurant_id = data.get('restaurant_id')
-
-    # Validate fields
-    if price is None or not pizza_id or not restaurant_id:
-        return make_response({"errors": ["validation errors"]}, 400)
-
-    try:
-        # Ensure pizza and restaurant exist
-        pizza = Pizza.query.filter_by(id=pizza_id).first()
-        restaurant = Restaurant.query.filter_by(id=restaurant_id).first()
-
-        if not pizza or not restaurant:
+        except IntegrityError:
+            db.session.rollback()
+            return make_response({'errors': ['validation errors']}, 400)
+        
+        except Exception:
+            db.session.rollback()
             return make_response({"errors": ["validation errors"]}, 400)
-
-        # Create new RestaurantPizza
-        restaurant_pizza = RestaurantPizza(
-            price=price,
-            pizza_id=pizza_id,
-            restaurant_id=restaurant_id
-        )
-
-        db.session.add(restaurant_pizza)
-        db.session.commit()
-
-        # Prepare full nested response
-        response = {
-            "id": restaurant_pizza.id,
-            "price": restaurant_pizza.price,
-            "pizza_id": pizza.id,
-            "restaurant_id": restaurant.id,
-            "pizza": {
-                "id": pizza.id,
-                "name": pizza.name,
-                "ingredients": pizza.ingredients
-            },
-            "restaurant": {
-                "id": restaurant.id,
-                "name": restaurant.name,
-                "address": restaurant.address
-            }
-        }
-
-        return make_response(response, 201)
-
-    except IntegrityError:
-        db.session.rollback()
-        return make_response({"errors": ["validation errors"]}, 400)
-
-    except Exception:
-        db.session.rollback()
-        return make_response({"errors": ["validation errors"]}, 400)
+    
+api.add_resource(Restaurant_Pizzas, '/restaurant_pizzas')
 
 if __name__ == "__main__":
     app.run(port=5555, debug=True)
